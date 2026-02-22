@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <algorithm>
 #include <vector>
 #include <iostream>
 #include <cmath>
@@ -52,9 +53,10 @@ double sampleR(int n, int l, mt19937& gen) {
     const double rMax = 10.0 * n * n * a0;
 
     static vector<double> cdf;
-    static bool built = false;
+    static int cachedN = -1;
+    static int cachedL = -1;
 
-    if (!built) {
+    if (cachedN != n || cachedL != l) {
         cdf.resize(N);
         double dr = rMax / (N - 1);
         double sum = 0.0;
@@ -88,22 +90,25 @@ double sampleR(int n, int l, mt19937& gen) {
         }
 
         for (double& v : cdf) v /= sum;
-        built = true;
+        cachedN = n;
+        cachedL = l;
     }
 
     uniform_real_distribution<double> dis(0.0, 1.0);
     double u = dis(gen);
 
-    int idx = lower_bound(cdf.begin(), cdf.end(), u) - cdf.begin();
+    int idx = std::lower_bound(cdf.begin(), cdf.end(), u) - cdf.begin();
     return idx * (rMax / (N - 1));
 }
 // --- sample Theta ---
 double sampleTheta(int l, int m, mt19937& gen) {
     const int N = 2048;
     static vector<double> cdf;
-    static bool built = false;
+    static int cachedL = -1;
+    static int cachedM = -100000;
 
-    if (!built) {
+    int absM = std::abs(m);
+    if (cachedL != l || cachedM != absM) {
         cdf.resize(N);
         double dtheta = M_PI / (N - 1);
         double sum = 0.0;
@@ -114,27 +119,27 @@ double sampleTheta(int l, int m, mt19937& gen) {
 
             // Associated Legendre P_l^m(x)
             double Pmm = 1.0;
-            if (m > 0) {
+            if (absM > 0) {
                 double somx2 = sqrt((1.0 - x) * (1.0 + x));
                 double fact = 1.0;
-                for (int j = 1; j <= m; ++j) {
+                for (int j = 1; j <= absM; ++j) {
                     Pmm *= -fact * somx2;
                     fact += 2.0;
                 }
             }
 
             double Plm;
-            if (l == m) {
+            if (l == absM) {
                 Plm = Pmm;
             } else {
-                double Pm1m = x * (2 * m + 1) * Pmm;
-                if (l == m + 1) {
+                double Pm1m = x * (2 * absM + 1) * Pmm;
+                if (l == absM + 1) {
                     Plm = Pm1m;
                 } else {
                     double Pll;
-                    for (int ll = m + 2; ll <= l; ++ll) {
+                    for (int ll = absM + 2; ll <= l; ++ll) {
                         Pll = ((2 * ll - 1) * x * Pm1m -
-                               (ll + m - 1) * Pmm) / (ll - m);
+                               (ll + absM - 1) * Pmm) / (ll - absM);
                         Pmm = Pm1m;
                         Pm1m = Pll;
                     }
@@ -148,13 +153,14 @@ double sampleTheta(int l, int m, mt19937& gen) {
         }
 
         for (double& v : cdf) v /= sum;
-        built = true;
+        cachedL = l;
+        cachedM = absM;
     }
 
     uniform_real_distribution<double> dis(0.0, 1.0);
     double u = dis(gen);
 
-    int idx = lower_bound(cdf.begin(), cdf.end(), u) - cdf.begin();
+    int idx = std::lower_bound(cdf.begin(), cdf.end(), u) - cdf.begin();
     return idx * (M_PI / (N - 1));
 }
 // --- sample Phi (uniform) ---
@@ -169,7 +175,7 @@ vec3 calculateProbabilityFlow(Particle& p, int n, int l, int m) {
 
 
     //Compute magnitude
-    double sinTheta = sin(theta);  if (abs(sinTheta) < 1e-4) sinTheta = 1e-4;
+    double sinTheta = sin(theta);  if (std::abs(sinTheta) < 1e-4) sinTheta = 1e-4;
     double v_mag = hbar * m / (m_e * r * sinTheta);
 
     //Convert to Cartesian
@@ -212,27 +218,28 @@ vec4 inferno2(double r, double theta, double phi, int n, int l, int m)
     // --- angular part |P_l^m(cosθ)|^2 ---
     double x = cos(theta);
 
+    int absM = std::abs(m);
     double Pmm = 1.0;
-    if (m > 0) {
+    if (absM > 0) {
         double somx2 = sqrt((1.0 - x) * (1.0 + x));
         double fact = 1.0;
-        for (int j = 1; j <= m; ++j) {
+        for (int j = 1; j <= absM; ++j) {
             Pmm *= -fact * somx2;
             fact += 2.0;
         }
     }
 
     double Plm;
-    if (l == m) {
+    if (l == absM) {
         Plm = Pmm;
     } else {
-        double Pm1m = x * (2*m + 1) * Pmm;
-        if (l == m + 1) {
+        double Pm1m = x * (2 * absM + 1) * Pmm;
+        if (l == absM + 1) {
             Plm = Pm1m;
         } else {
-            for (int ll = m + 2; ll <= l; ++ll) {
+            for (int ll = absM + 2; ll <= l; ++ll) {
                 double Pll = ((2*ll - 1) * x * Pm1m -
-                              (ll + m - 1) * Pmm) / (ll - m);
+                              (ll + absM - 1) * Pmm) / (ll - absM);
                 Pmm = Pm1m;
                 Pm1m = Pll;
             }
@@ -248,7 +255,7 @@ vec4 inferno2(double r, double theta, double phi, int n, int l, int m)
     double t = log10(intensity + 1e-12) + 12.0;
     t /= 12.0;
 
-    t = clamp(t, 0.0, 1.0);
+    t = glm::clamp(t, 0.0, 1.0);
 
     // --- inferno-style ramp ---
     float rC = smoothstep(0.15f, 1.0f, static_cast<float>(t));
@@ -323,27 +330,28 @@ vec4 inferno(double r, double theta, double phi, int n, int l, int m) {
     // --- angular part |P_l^m(cosθ)|^2 ---
     double x = cos(theta);
 
+    int absM = std::abs(m);
     double Pmm = 1.0;
-    if (m > 0) {
+    if (absM > 0) {
         double somx2 = sqrt((1.0 - x) * (1.0 + x));
         double fact = 1.0;
-        for (int j = 1; j <= m; ++j) {
+        for (int j = 1; j <= absM; ++j) {
             Pmm *= -fact * somx2;
             fact += 2.0;
         }
     }
 
     double Plm;
-    if (l == m) {
+    if (l == absM) {
         Plm = Pmm;
     } else {
-        double Pm1m = x * (2*m + 1) * Pmm;
-        if (l == m + 1) {
+        double Pm1m = x * (2 * absM + 1) * Pmm;
+        if (l == absM + 1) {
             Plm = Pm1m;
         } else {
-            for (int ll = m + 2; ll <= l; ++ll) {
+            for (int ll = absM + 2; ll <= l; ++ll) {
                 double Pll = ((2*ll - 1) * x * Pm1m -
-                              (ll + m - 1) * Pmm) / (ll - m);
+                              (ll + absM - 1) * Pmm) / (ll - absM);
                 Pmm = Pm1m;
                 Pm1m = Pll;
             }
@@ -376,7 +384,7 @@ struct Camera {
     double lastX = 0.0, lastY = 0.0;
 
     vec3 position() const {
-        float clampedElevation = clamp(elevation, 0.01f, float(M_PI) - 0.01f);
+        float clampedElevation = glm::clamp(elevation, 0.01f, float(M_PI) - 0.01f);
         return vec3(
             radius * sin(clampedElevation) * cos(azimuth),
             radius * cos(clampedElevation),
@@ -452,8 +460,15 @@ struct Engine {
     GLuint ssbo_spheres;
 
     Engine () {
+#ifdef __APPLE__
+        cerr << "atom_raytracer requires OpenGL 4.3 (SSBO), which macOS does not provide.\n";
+        exit(EXIT_FAILURE);
+#endif
         // --- Init GLFW ---
         if (!glfwInit()) { cerr << "GLFW init failed\n"; exit(EXIT_FAILURE); } 
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
         // --- Init Window ---
         window = glfwCreateWindow(WIDTH, HEIGHT, "Quantum Simulation by kavan G - Raytraced", nullptr, nullptr);
@@ -463,6 +478,7 @@ struct Engine {
         // --- Init GLEW ---
         glewExperimental = GL_TRUE;
         if (glewInit() != GLEW_OK) { cerr << "Failed to initialize GLEW\n"; glfwTerminate(); exit(EXIT_FAILURE); }
+        glGetError(); // Clear spurious error generated by GLEW on some drivers.
 
         // blending for smooth rendering
         glEnable(GL_BLEND);

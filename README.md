@@ -1,57 +1,78 @@
-# **Hydrogen Quantum Orbital Visualizer**
+# Hydrogenic Orbital Visualizer
 
-Here is the raw code for the atom simulation, includes raytracer version, realtime runner, and 2D version
+This repo contains multiple OpenGL orbital visualizers (`atom`, `wave_atom_2d`, `atom_realtime`, `atom_raytracer`) and a Python orbital sampler (`src/schrodinger.py`).
 
-web version: [kavang.com/atom](https://www.kavang.com/atom)
+## What Changed
 
-What the model does:
-1. Takes the quantum numbers (n, l, m) that describe an orbital's shape
-2. Using the schrodinger equation, sample r, theta, and phi coordinates from those quantum numbers
-3. Render those possible positions and color code them relative to their probabilities (brighter areas have higher probability)
+- Added a cross-platform `CMakeLists.txt`.
+- Updated OpenGL setup so the legacy 2D renderers work on macOS.
+- Added Dirac radial mode + higher nuclear charge (`Z`) support in `src/schrodinger.py`.
+- Fixed orbital sampling cache bugs in the realtime/raytracer samplers when `n/l/m` changes.
 
-## **Building Requirements:**
+## Build
 
-1. C++ Compiler supporting C++ 17 or newer
+### macOS (Homebrew)
 
-2. [Cmake](https://cmake.org/)
+```bash
+brew install cmake glfw glew glm pkg-config
+cmake -S . -B build
+cmake --build build -j
+```
 
-3. [Vcpkg](https://vcpkg.io/en/)
+Notes:
+- `atom_raytracer` is skipped on macOS because it needs OpenGL 4.3 SSBOs, while macOS supports up to OpenGL 4.1.
 
-4. [Git](https://git-scm.com/)
-
-## **Build Instructions:**
-
-1. Clone the repository:
-	-  `git clone https://github.com/kavan010/Atoms.git`
-2. CD into the newly cloned directory
-	- `cd ./Atoms` 
-3. Install dependencies with Vcpkg
-	- `vcpkg install`
-4. Get the vcpkg cmake toolchain file path
-	- `vcpkg integrate install`
-	- This will output something like : `CMake projects should use: "-DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake"`
-5. Create a build directory
-	- `mkdir build`
-6. Configure project with CMake
-	-  `cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake`
-	- Use the vcpkg cmake toolchain path from above
-7. Build the project
-	- `cmake --build build`
-8. Run the program
-	- The executables will be located in the build folder
-
-### Alternative: Debian/Ubuntu apt workaround
-
-If you don't want to use vcpkg, or you just need a quick way to install the native development packages on Debian/Ubuntu, install these packages and then run the normal CMake steps above:
+### Linux (Debian/Ubuntu)
 
 ```bash
 sudo apt update
-sudo apt install build-essential cmake \
-	libglew-dev libglfw3-dev libglm-dev libgl1-mesa-dev
+sudo apt install build-essential cmake pkg-config \
+  libglfw3-dev libglew-dev libglm-dev libgl1-mesa-dev
+cmake -S . -B build
+cmake --build build -j
 ```
 
-This provides the GLEW, GLFW, GLM and OpenGL development files so `find_package(...)` calls in `CMakeLists.txt` can locate the libraries. After installing, run the `cmake -B build -S .` and `cmake --build build` commands as shown in the Build Instructions.
+### Windows (vcpkg example)
 
-## **How the code works:**
-the 2D bohr model works is in atom.cpp, the raytracer and realtime models are right beside
-* warning, I would recommend running the realtime model with <100k particles first to be sure, raytracer is super compu-intensive so make sure your system can handle it!
+```bash
+vcpkg install glfw3 glew glm
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build --config Release
+```
+
+## Dirac + Higher-Z Orbital Generation
+
+The sampler now supports:
+- `--mode schrodinger` (hydrogenic Schrodinger)
+- `--mode dirac` (Dirac-Coulomb radial large-component scaling)
+- arbitrary nuclear charge `--z` for hydrogen-like ions
+
+Install Python dependencies:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+Example (iron-like hydrogenic ion, Dirac radial mode):
+
+```bash
+python3 src/schrodinger.py \
+  --mode dirac --z 26 --n 3 --l 1 --m 0 --j-branch plus \
+  --samples 80000
+```
+
+Example (interactive mode):
+
+```bash
+python3 src/schrodinger.py
+```
+
+Generated JSON files are written to `orbitals/` by default.
+
+## Source Layout
+
+- `src/atom.cpp`: 2D legacy atom model
+- `src/wave_atom_2d.cpp`: 2D wave/orbit visualizer
+- `src/atom_realtime.cpp`: realtime 3D point/sphere orbital renderer
+- `src/atom_raytracer.cpp`: SSBO-based raytracer (non-macOS)
+- `src/schrodinger.py`: orbital sample generator (Schrodinger + Dirac radial mode)
